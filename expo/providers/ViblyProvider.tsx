@@ -570,6 +570,57 @@ function fallbackAction(
   return { ...pick, date, done: false };
 }
 
+function fallbackInsight(ci: CheckIn | undefined): string {
+  if (!ci) {
+    return "Today is quietly unfolding — keep checking in.";
+  }
+  const avg = (ci.emotion + ci.energy + ci.focus) / 3;
+  const e = ci.emotion;
+  const nrg = ci.energy;
+  const fcs = ci.focus;
+
+  let emoji: string;
+  let status: string;
+  if (avg >= 7) {
+    emoji = "☀️";
+    status = "You're in a creative peak — protect a deep, generative block.";
+  } else if (avg >= 5.5) {
+    emoji = "🌊";
+    status = "Steady flow today — keep a calm execution pace.";
+  } else if (nrg <= 4 && e <= 5) {
+    emoji = "🌱";
+    status = "Energy is low — keep today small and forgiving.";
+  } else if (e <= 4) {
+    emoji = "🌙";
+    status = "Emotions feel tender — rest is the productive choice today.";
+  } else {
+    emoji = "⚖️";
+    status = "A balanced day — mix focused work with real breaks.";
+  }
+
+  let body: string;
+  if (nrg <= 4) {
+    body = `Your energy sits at ${nrg}/10 — this is a day for light touch work. Clear a few small items, sort your notes, or make one tiny decision. Try stepping outside for five minutes of daylight; it often shifts things more than another coffee.`;
+  } else if (fcs <= 4) {
+    body = `Focus is at ${fcs}/10 — your mind may want to wander. That's okay. Use it: do something loosely creative without pressure to finish. A doodle, a voice memo, reading something inspiring. Come back to harder tasks when focus returns.`;
+  } else if (avg >= 7) {
+    body = `Emotion ${e}/10, energy ${nrg}/10, focus ${fcs}/10 — you're in a strong window. This is the time for the messy first draft, the big design move, the hard problem you've been circling. Protect this block from interruptions.`;
+  } else {
+    body = `Emotion ${e}/10, energy ${nrg}/10, focus ${fcs}/10 — a solid mid-range day. Good for execution work: polishing, planning, structured tasks with clear scope. Pair each focused sprint with a genuine pause.`;
+  }
+
+  let question: string;
+  if (e <= 5) {
+    question = "What's one tiny thing that could bring a flicker of warmth today?";
+  } else if (nrg >= 7) {
+    question = "What's the one task you'd be proudest to finish before sunset?";
+  } else {
+    question = "Which task today deserves your best hour?";
+  }
+
+  return `${emoji} ${status}\n\n${body} ${question}`;
+}
+
 /** AI daily insight for Pro users — regenerated each day. */
 export function useDailyInsight(enabled: boolean) {
   const { state } = useVibly();
@@ -627,21 +678,25 @@ export function useDailyInsight(enabled: boolean) {
     queryFn: async () => {
       const toolkitUrl = process.env.EXPO_PUBLIC_TOOLKIT_URL;
       const secret = process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY;
-      if (!toolkitUrl || !secret) throw new Error("missing env");
-      const res = await fetch(
-        `${toolkitUrl}/v2/vercel/v1/chat/completions`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${secret}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "anthropic/claude-sonnet-4.5",
-            messages: [
-              {
-                role: "system",
-                content:
+      if (!toolkitUrl || !secret) {
+        console.warn("[Vibly] insight: missing env vars");
+        return fallbackInsight(todayCi);
+      }
+      try {
+        const res = await fetch(
+          `${toolkitUrl}/v2/vercel/v1/chat/completions`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${secret}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "anthropic/claude-sonnet-4.5",
+              messages: [
+                {
+                  role: "system",
+                  content:
                   "You are Vibly, a warm companion for creative working people (founders, makers, writers, designers, builders). You MUST format your reply in TWO parts separated by a single blank line. Do not skip Part 1.\n\nPART 1 — Status line (REQUIRED, exactly one line): start with ONE emoji that matches today's state, then a short single sentence (max ~16 words) naming the vibe AND the realistic productivity level for today. Choose the emoji + framing from their data:\n• 🌱 creativity is low — go gentle, simple tasks only\n• 🔥 burnout risk — protect rest, no heavy lifts\n• ⚖️ output vs rest — balance focused work with breaks\n• ☀️ creative peak — tackle the hard, generative work\n• 🌊 steady flow — keep a calm execution pace\n• 🌙 low energy — rest is the productive choice\nExamples: '🌱 Creativity feels low — keep today small and forgiving.' or '☀️ You're in a creative peak — protect a deep, generative block.'\n\nPART 2 — Reflection (REQUIRED, 5-7 warm sentences, ~90-130 words): fuse their mood with creative work life. You MUST include all of:\n1) Read their current state out loud (what the emotion/energy/focus numbers actually feel like).\n2) Recommend a concrete CATEGORY of work that fits today — be specific. Low energy/focus (≤4) → admin, light email, organising notes, low-stakes editing, watching reference, a single tiny decision. Mid energy/focus (5-6) → execution work, polishing, planning, structured tasks with clear scope. High energy/focus (≥7) → the hard creative generative work: new ideas, writing the messy first draft, big design moves, the hairy problem you've been avoiding.\n3) Name ONE concrete stress-management or recovery action if emotion or energy is low (e.g. a 10-minute walk in daylight, box breathing for 90 seconds, closing one tab and one task, eating something warm).\n4) If you can see a time-of-day pattern in the data, mention their likely peak window today.\n5) End with ONE short reflective question that ties mood to a real work decision (e.g. 'What's the smallest version of today's most important task?').\n\nSpeak in second person, warm and grounded, like a thoughtful friend. No lists, no bullets, no headings, no markdown. The status line is the ONLY place an emoji appears. Always include both parts.",
               },
               { role: "user", content: context },
@@ -650,15 +705,25 @@ export function useDailyInsight(enabled: boolean) {
             max_tokens: 700,
           }),
         }
-      );
-      const data = (await res.json()) as {
-        choices?: { message?: { content?: string } }[];
-      };
-      return (
-        data.choices?.[0]?.message?.content ??
-        "Today is quietly unfolding — keep checking in."
-      );
-    },
+          );
+          if (!res.ok) {
+            console.warn(`[Vibly] insight: API ${res.status}`);
+            return fallbackInsight(todayCi);
+          }
+          const data = (await res.json()) as {
+            choices?: { message?: { content?: string } }[];
+          };
+          const content = data.choices?.[0]?.message?.content;
+          if (!content || content.trim().length === 0) {
+            console.warn("[Vibly] insight: empty response");
+            return fallbackInsight(todayCi);
+          }
+          return content;
+        } catch (e) {
+          console.warn("[Vibly] insight: fetch error", e);
+          return fallbackInsight(todayCi);
+        }
+      }, 
     enabled: enabled && recentKeys.length > 0,
     staleTime: 1000 * 60 * 60 * 6,
     retry: 1,
