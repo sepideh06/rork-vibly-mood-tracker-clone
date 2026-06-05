@@ -165,8 +165,10 @@ export const [ViblyProvider, useVibly] = createContextHook(() => {
           [date]: { ...partial, date, createdAt: Date.now() },
         },
       }));
+      // Invalidate insight so it refetches with fresh check-in data.
+      queryClient.invalidateQueries({ queryKey: ["daily-insight"] });
     },
-    []
+    [queryClient]
   );
 
   const addJournal = useCallback((text: string): JournalEntry => {
@@ -570,14 +572,26 @@ function fallbackAction(
   return { ...pick, date, done: false };
 }
 
-function fallbackInsight(ci: CheckIn | undefined): string {
-  if (!ci) {
+function fallbackInsight(
+  ci: CheckIn | undefined,
+  allCheckIns: Record<string, CheckIn>
+): string {
+  // If today's check-in is missing but we have recent data, use the most recent entry.
+  const resolved = ci ?? (() => {
+    const keys = Object.keys(allCheckIns).sort();
+    if (keys.length === 0) return undefined;
+    return allCheckIns[keys[keys.length - 1]];
+  })();
+
+  if (!resolved) {
     return "Today is quietly unfolding — keep checking in.";
   }
-  const avg = (ci.emotion + ci.energy + ci.focus) / 3;
-  const e = ci.emotion;
-  const nrg = ci.energy;
-  const fcs = ci.focus;
+  // Use resolved for the rest of the function.
+  const effective = resolved;
+  const avg = (effective.emotion + effective.energy + effective.focus) / 3;
+  const e = effective.emotion;
+  const nrg = effective.energy;
+  const fcs = effective.focus;
 
   let emoji: string;
   let status: string;
@@ -680,7 +694,7 @@ export function useDailyInsight(enabled: boolean) {
       const secret = process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY;
       if (!toolkitUrl || !secret) {
         console.warn("[Vibly] insight: missing env vars");
-        return fallbackInsight(todayCi);
+        return fallbackInsight(todayCi, state.checkIns);
       }
       try {
         const res = await fetch(
@@ -708,7 +722,7 @@ export function useDailyInsight(enabled: boolean) {
           );
           if (!res.ok) {
             console.warn(`[Vibly] insight: API ${res.status}`);
-            return fallbackInsight(todayCi);
+            return fallbackInsight(todayCi, state.checkIns);
           }
           const data = (await res.json()) as {
             choices?: { message?: { content?: string } }[];
@@ -716,12 +730,12 @@ export function useDailyInsight(enabled: boolean) {
           const content = data.choices?.[0]?.message?.content;
           if (!content || content.trim().length === 0) {
             console.warn("[Vibly] insight: empty response");
-            return fallbackInsight(todayCi);
+            return fallbackInsight(todayCi, state.checkIns);
           }
           return content;
         } catch (e) {
           console.warn("[Vibly] insight: fetch error", e);
-          return fallbackInsight(todayCi);
+          return fallbackInsight(todayCi, state.checkIns);
         }
       }, 
     enabled: enabled && recentKeys.length > 0,
