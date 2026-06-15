@@ -133,17 +133,33 @@ export const [ViblyProvider, useVibly] = createContextHook(() => {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    configureNotificationHandler();
+    try {
+      configureNotificationHandler();
+    } catch (e) {
+      console.warn("[Vibly] notification handler setup failed", e);
+    }
     let alive = true;
-    loadState().then((s) => {
-      if (!alive) return;
-      const next: State =
-        s.trialStartedAt == null && !s.plan
-          ? { ...s, trialStartedAt: Date.now() }
-          : s;
-      setState(next);
-      setHydrated(true);
-    });
+    loadState()
+      .then((s) => {
+        if (!alive) return;
+        const next: State =
+          s.trialStartedAt == null && !s.plan
+            ? { ...s, trialStartedAt: Date.now() }
+            : s;
+        setState(next);
+        setHydrated(true);
+      })
+      .catch((e) => {
+        console.warn("[Vibly] failed to load state, using empty", e);
+        if (alive) {
+          setState((prev) =>
+            prev.trialStartedAt == null
+              ? { ...prev, trialStartedAt: Date.now() }
+              : prev
+          );
+          setHydrated(true);
+        }
+      });
     return () => {
       alive = false;
     };

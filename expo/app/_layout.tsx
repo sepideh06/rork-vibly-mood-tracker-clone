@@ -5,6 +5,7 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ViblyProvider, useVibly } from "@/providers/ViblyProvider";
 
 SplashScreen.preventAutoHideAsync();
@@ -68,8 +69,10 @@ export default function RootLayout() {
       <ViblyProvider>
         <GestureHandlerRootView style={{ flex: 1 }}>
           <StatusBar style="light" />
-          <TrialGate />
-          <RootLayoutNav />
+          <ErrorBoundary>
+            <TrialGate />
+            <RootLayoutNav />
+          </ErrorBoundary>
         </GestureHandlerRootView>
       </ViblyProvider>
     </QueryClientProvider>
