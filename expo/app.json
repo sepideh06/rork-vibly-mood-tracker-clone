@@ -22,7 +22,8 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "app.rork.icfjzm3m0o6sx175i6xcg"
+      "package": "app.rork.icfjzm3m0o6sx175i6xcg",
+      "versionCode": 4
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
